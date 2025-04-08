@@ -1,3 +1,36 @@
+const { createServer } = require("http");
+const {
+  setupSocketServer,
+  initializeMongoConnection,
+} = require("./socket/socketServer");
+require("dotenv").config();
+
+const server = createServer();
+const io = setupSocketServer(server);
+
+server.listen(process.env.PORT, process.env.host, async () => {
+  try {
+    await initializeMongoConnection(); // Initialize MongoDB and MySQL connections
+    console.log("✅ MongoDB and MySQL Connections Established");
+  } catch (error) {
+    console.error("❌ MongoDB or MySQL Connection Failed:", error);
+  }
+  console.log(`🚀 Server running at ${process.env.host}:${process.env.PORT}`);
+});
+
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`❌ Port is already in use. Trying another port...`);
+    const newPort = Math.floor(Math.random() * (4000 - 3001) + 3001); // Random port 3001-4000
+    server.listen(newPort, async () => {
+      await initializeMongoConnection();
+      console.log(`🚀 Server running at Port: ${newPort}`);
+    });
+  } else {
+    console.error("❌ Server Error:", err);
+  }
+});
+
 /* const { createServer } = require("http");
 const {
   setupSocketServer,
@@ -92,36 +125,3 @@ server.on("error", (err) => {
     console.error("❌ Server Error:", err);
   }
 }); */
-
-const { createServer } = require("http");
-const {
-  setupSocketServer,
-  initializeMongoConnection,
-} = require("./socket/socketServer");
-require("dotenv").config();
-
-const server = createServer();
-const io = setupSocketServer(server);
-
-server.listen(process.env.PORT || 3000, async () => {
-  try {
-    await initializeMongoConnection(); // Initialize MongoDB and MySQL connections
-    console.log("✅ MongoDB and MySQL Connections Established");
-  } catch (error) {
-    console.error("❌ MongoDB or MySQL Connection Failed:", error);
-  }
-  console.log(`🚀 Server running at Port: ${process.env.PORT || 3000}`);
-});
-
-server.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(`❌ Port is already in use. Trying another port...`);
-    const newPort = Math.floor(Math.random() * (4000 - 3001) + 3001); // Random port 3001-4000
-    server.listen(newPort, async () => {
-      await initializeMongoConnection();
-      console.log(`🚀 Server running at Port: ${newPort}`);
-    });
-  } else {
-    console.error("❌ Server Error:", err);
-  }
-});

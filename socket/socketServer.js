@@ -29,7 +29,8 @@ function setupSocketServer(httpServer) {
   });
 
   io.use((socket, next) => {
-    const token = socket.handshake.headers["authorization"];
+    const tokenWithQuotes = socket.handshake.auth.authorization;
+    const token = tokenWithQuotes.replace(/^"(.+)"$/, '$1');
     console.log("🔒 Socket authentication token:", token); // Log the token
     jwt.verify(token, JWT_SECRET_KEY, (err, decode) => {
       if (err) {
