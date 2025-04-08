@@ -1,0 +1,63 @@
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Environment variables
+.env
+.env.*.local
+
+# Debug files
+*.local
+*.swp
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build output
+dist/
+build/
+
+# Optional npm cache directory
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# Socket.io specific (if any temp files or sockets used)
+*.sock
+
+# Coverage directory used by testing tools
+coverage/
+
+# Binaries
+*.exe
+*.out
+*.app
+
+# Mongo or database dumps
+dump/
+*.sql
+*.sqlite
+
+# Optional logs for socket events if logged separately
+socket-logs/
