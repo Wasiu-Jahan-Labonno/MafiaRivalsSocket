@@ -184,6 +184,42 @@ class SqlUtil {
     ]);
     return result.affectedRows;
   }
+
+  async fetchChatIdList(userId) {
+    try {
+      const [results] = await this.pool.query(
+        `SELECT
+           r.room_uuid,
+           g.id,
+           g.name,
+           g.lvl
+         FROM message_rooms r
+         JOIN gcarts g ON g.id = CASE
+           WHEN r.user1_id = ? THEN r.user2_id
+           ELSE r.user1_id
+         END
+         WHERE r.user1_id = ? OR r.user2_id = ?`,
+        [userId, userId, userId]
+      );
+      return results;
+    } catch (error) {
+      console.error("❌ Error fetching chat ID list:", error);
+      throw new Error("Failed to fetch chat ID list");
+    }
+  }
+
+  async fetchNamesByIds(ids) {
+    try {
+      const [results] = await this.pool.query(
+        `SELECT id, name, lvl FROM gcarts WHERE id IN (?)`,
+        [ids]
+      );
+      return results;
+    } catch (error) {
+      console.error("❌ Error fetching names by IDs:", error);
+      throw new Error("Failed to fetch names by IDs");
+    }
+  }
 }
 
 module.exports = SqlUtil;

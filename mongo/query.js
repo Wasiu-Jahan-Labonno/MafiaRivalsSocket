@@ -15,13 +15,13 @@ class MongoUtil {
     this.client = new MongoClient(url);
     this.db = null;
   }
-  async insertMessage(room_uuid, sender_id, receiver_id, message) {
+  async insertMessage(room_uuid, senderId, receiverId, message) {
     await this.connect();
     const collection = this.db.collection("messages");
     return await collection.insertOne({
       room_uuid,
-      sender_id,
-      receiver_id,
+      senderId,
+      receiverId,
       message,
       timestamp: new Date(),
     });
@@ -37,7 +37,7 @@ class MongoUtil {
     }
   }
 
-  async getMessages(sender_id, receiver_id) {
+  /* async getMessages(sender_id, receiver_id) {
     if (!this.db) await this.connect();
     try {
       const collection = this.db.collection("messages");
@@ -56,7 +56,7 @@ class MongoUtil {
       console.error("❌ Error retrieving messages:", error);
       return [];
     }
-  }
+  } */
   /**
    * Close the MongoDB connection
    */
@@ -148,11 +148,12 @@ class MongoUtil {
   }
 
   /** ✅ Insert Global Message */
-  async insertGlobalMessage(sender_id, type, message) {
+  async insertGlobalMessage(senderId, senderName, type, message) {
     await this.connect();
     const collection = this.db.collection("global_messages"); // Collection for global messages
     return await collection.insertOne({
-      sender_id,
+      senderId,
+      senderName,
       message,
       type,
       timestamp: new Date(),
@@ -165,7 +166,7 @@ class MongoUtil {
     const collection = this.db.collection("messages");
     return await collection
       .find({ room_uuid })
-      .sort({ timestamp: 1 })
+      .sort({ timestamp: -1 })
       .toArray();
   }
 
@@ -181,10 +182,10 @@ class MongoUtil {
       console.log(`📡 Fetching global messages with type: ${type || "all"}`);
 
       const query = type ? { type } : {};
-      const messages = this.db
+      const messages = await this.db
         .collection("global_messages")
         .find(query)
-        .sort({ timestamp: 1 })
+        .sort({ timestamp: -1 })
         .toArray();
 
       console.log(
@@ -197,16 +198,18 @@ class MongoUtil {
     }
   }
 
-  async insertGangMessage(gid, sender_id, message) {
+  async insertGangMessage(userId, userName, message, gid) {
     await this.connect();
     const collection = this.db.collection("gang_messages");
     return await collection.insertOne({
-      gid,
-      sender_id,
+      senderId: userId,
+      senderName: userName,
       message,
+      gid,
       timestamp: new Date(),
     });
   }
+
   async getMessagesForGang(gid) {
     try {
       await this.connect(); // Ensure connected to MongoDB
@@ -215,9 +218,8 @@ class MongoUtil {
       // Fetch all messages for the given `gid`
       const messages = await collection
         .find({ gid: gid }) // Filter messages by `gid`
-        .sort({ timestamp: 1 }) // Sort by timestamp (oldest first)
+        .sort({ timestamp: -1 }) // Sort by timestamp (Newest first)
         .toArray();
-
       // Return the fetched messages
       return messages;
     } catch (error) {
@@ -225,6 +227,28 @@ class MongoUtil {
       return [];
     }
   }
+
+  //Fetch Last messages for uuids
+  async getLastMessages(data) {
+    try {
+      await this.connect();
+      const collection = this.db.collection("messages");
+      const promises = data.map(async uuid => {
+        const msg = await collection
+          .find({ room_uuid: uuid.room_uuid })
+          .sort({ timestamp: -1 })
+          .limit(1)
+          .toArray();
+    
+        return msg[0] || null;
+      });
+    
+      return await Promise.all(promises);
+    } catch (error) {
+      console.error("❌ Error fetching last messages:", error);
+      return [];
+    }
+  };
 
   /** ✅ Fetch Gang Chat Messages */
   /*  async getGangMessages(gang_id) {

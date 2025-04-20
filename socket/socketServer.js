@@ -29,7 +29,7 @@ function setupSocketServer(httpServer) {
   });
 
   io.use((socket, next) => {
-    const tokenWithQuotes = socket.handshake.auth.authorization;
+    const tokenWithQuotes = socket.handshake.auth.token || socket.handshake.headers.token;
     const token = tokenWithQuotes.replace(/^"(.+)"$/, '$1');
     console.log("🔒 Socket authentication token:", token); // Log the token
     jwt.verify(token, JWT_SECRET_KEY, (err, decode) => {
@@ -48,6 +48,7 @@ function setupSocketServer(httpServer) {
     const userIdStr = socket.userId.toString();
     onlineUserIdsSet.add(userIdStr);
     io.emit(`return_online_status_${userIdStr}`, { online_status: true });
+    io.emit('userStatusChange', {id: socket.userId, online: true});
 
     console.log(`✅ User ${userIdStr} connected.`); // Log user connection
 
@@ -112,134 +113,119 @@ function setupSocketServer(httpServer) {
       }
     });
 
-    socket.on("joinRoom", async (data) => {
-      /*     const { user2_id } = data;
-      let user1_id = socket.userId; */
-      const { user2_id } = data;
-      let user1_id = socket.userId;
-      console.log(user2_id, user1_id);
-
-      if (!data) {
+    socket.on("joinRoom", async ({friendId}, callback) => {
+      if (!friendId) {
         console.error("❌ No data received.");
-        socket.emit("error", { message: "No data received." });
+        callback({ status: false, error });
         return;
       }
-      if (!user1_id || !data.user2_id) {
+
+      const user2_id = Number(friendId);
+      let user1_id = Number(socket.userId);
+
+      if (!user1_id || !user2_id) {
         console.error("❌ Missing user1_id or user2_id", data);
-        socket.emit("error", {
-          message: "User ID and recipient ID are required.",
-        });
+        callback({ status: false, error });
         return;
       }
 
       if (
-        !Number.isInteger(Number(user1_id)) ||
-        !Number.isInteger(Number(user2_id))
+        !Number.isInteger(user1_id) ||
+        !Number.isInteger(user2_id)
       ) {
         console.error("❌ User IDs must not be integers.");
-        socket.emit("error", { message: "User IDs must not be integers." });
+        callback({ status: false, error });
         return;
       }
 
-      // Convert user1_id and user2_id to numbers if they are not integers
-
       try {
         if (!user1_id || !user2_id) {
-          socket.emit("error", { message: "Invalid user IDs." });
+          callback({ status: false, error });
           return;
         }
-
-        // Check if the room exists
-        let room = await sqlUtil.findRoom(user1_id, user2_id);
-
-        if (!room) {
-          // Create a new room if not found
-          room = await sqlUtil.createRoom(user1_id, user2_id);
-          console.log(`🆕 New room created: ${room.room_uuid}`);
-        } else {
-          socket.emit("error", {
-            message: "You already have a room with this user.",
-          });
-          return;
-        }
+        
+        let room = await sqlUtil.createRoom(user1_id, user2_id);
 
         // Check if the user is authorized to join
         if (
           ![room.user1_id, room.user2_id].includes(user1_id) &&
           ![room.user1_id, room.user2_id].includes(user2_id)
         ) {
-          socket.emit("error", {
-            message: "You are not authorized to join this room.",
-          });
+          callback({ status: false, error });
           return;
         }
-
         // Join the room in Socket.io
         socket.join(room.room_uuid);
-        socket.emit("roomJoined", {
-          room_uuid: room.room_uuid,
-          user1_id: room.user1_id,
-          user2_id: room.user2_id,
-          created_at: room.created_at,
+        const messages = await mongoUtil.getMessages(room.room_uuid);
+        callback({ 
+          status: true, 
+          room: {
+            room_uuid: room.room_uuid,
+            self: room.user1_id,
+            other: room.user2_id,
+            online: onlineUserIdsSet.has(user2_id.toString()),
+          },
+          messages 
         });
 
         console.log(`✅ User ${user1_id} joined room: ${room.room_uuid}`);
       } catch (error) {
         console.error("❌ Error in joinRoom:", error);
-        socket.emit("error", { message: "Error joining the room. Try again." });
+        callback({ status: false, error });
       }
     });
 
     socket.on("sendMessage", async (messageData) => {
-      const { message, receiver_id } = messageData; // No room_uuid passed
-      let sender_id = socket.userId;
+      const { message, receiverId, roomId } = messageData; // No room_uuid passed
+      let senderId = socket.userId;
       try {
         // 🔎 Step 1: Fetch room information using sender & receiver IDs
-        let room = await sqlUtil.findRoom(sender_id, receiver_id);
+        //let room = await sqlUtil.findRoom(senderId, receiverId);
 
         // 🛑 If room does not exist, stop here
-        if (!room || !room.room_uuid) {
+        /* if (!room || !room.room_uuid) {
           console.log("❌ Room not found for these users.");
           socket.emit("error", { message: "Room does not exist." });
           return;
-        }
+        } */
 
         // Extract the room UUID
-        let room_uuid = room.room_uuid;
-
-        console.log(`✅ Room found: ${room_uuid}`);
+        let room_uuid = roomId;
 
         // 🔎 Step 2: Ensure the sender is part of the room
-        if (![room.user1_id, room.user2_id].includes(sender_id)) {
+        /* if (![room.user1_id, room.user2_id].includes(sender_id)) {
           console.log("❌ Sender is not part of the room.");
           socket.emit("error", { message: "Unauthorized sender." });
           return;
-        }
+        } */
 
         // 🔎 Step 3: Save the message in MongoDB
-        await mongoUtil.insertMessage(
+        const {insertedId} = await mongoUtil.insertMessage(
           room_uuid,
-          sender_id,
-          receiver_id,
+          senderId,
+          receiverId,
           message
         );
 
         // 🔎 Step 4: Emit the message to the room
         io.to(room_uuid).emit("newMessage", {
-          sender_id,
-          receiver_id,
+          _id: insertedId,
+          room_uuid,
+          senderId,
+          receiverId,
           message,
-          created_at: new Date(),
+          timestamp: new Date(),
         });
 
         console.log(
-          `✅ Message from ${sender_id} sent to ${receiver_id}: ${message}`
+          `✅ Message from ${senderId} sent to ${receiverId}: ${message}`
         );
       } catch (error) {
         console.error("❌ Error saving message:", error);
         socket.emit("error", { message: "Failed to send message." });
       }
     });
+    
     socket.on("getMessages", async (data) => {
       const { user2_id } = data;
       let user1_id = socket.userId;
@@ -274,7 +260,8 @@ function setupSocketServer(httpServer) {
 
     // ✅ Send a Global Message
     socket.on("sendGlobalMessage", async ({ type, message }) => {
-      let sender_id = socket.userId;
+      let senderId = socket.userId;
+      let senderName = socket.userName; // Get the sender's name from the socket
 
       if (typeof type !== "string") {
         console.error("❌ Invalid type. It must be a string.");
@@ -283,16 +270,17 @@ function setupSocketServer(httpServer) {
         });
       }
       try {
-        await mongoUtil.insertGlobalMessage(sender_id, type, message);
-
+        const {insertedId} = await mongoUtil.insertGlobalMessage(senderId, senderName, type, message);
         io.emit("newGlobalMessage", {
-          sender_id,
+          _id: insertedId,
+          senderId,
+          senderName,
           message,
           type,
-          created_at: new Date(),
+          timestamp: new Date(),
         });
 
-        console.log(`🌍 Global message from ${sender_id}: ${message}`);
+        console.log(`🌍 Global message from ${senderName}: ${message}`);
       } catch (error) {
         console.error("❌ Error saving global message:", error);
         socket.emit("error", { message: "Failed to send global message." });
@@ -301,7 +289,7 @@ function setupSocketServer(httpServer) {
 
     // ✅ Get All Global Messages
     // 🟢 Get Global Messages (Public Chat)
-    socket.on("getGlobalMessages", async (data) => {
+    socket.on("getGlobalMessages", async (data, callback) => {
       const { type } = data;
       console.log(
         `📡 Request received for global messages of type: ${type || "all"}`
@@ -312,62 +300,53 @@ function setupSocketServer(httpServer) {
         const messages = await mongoUtil.getGlobalMessages(type);
 
         // Log full messages
-        console.log(
-          "📜 Sending global messages to client:",
+        /* console.log(
+          "📜 Sending global messages to client:",  
           JSON.stringify(messages, null, 2)
-        );
+        ); */
 
         // Send the full message data correctly
-        socket.emit("globalMessageHistory", { messages });
+        //socket.emit("globalMessageHistory", { messages });
+        
+      callback({ status: true, messages});
       } catch (error) {
         console.error("❌ Error fetching global messages:", error);
-        socket.emit("error", {
+        callback({ status: false, error});
+        /* socket.emit("error", {
           message: "Failed to retrieve global messages.",
-        });
+        }); */
       }
     });
     //////// gang
 
-    socket.on("gangMegSend", async (data) => {
+    socket.on("gangMsgSend", async (data) => {
       try {
-        const { gid, message } = data;
+        let {userId, userName} = socket;
 
-        if (!gid || !message) {
-          return socket.emit("error", {
-            message: "GID and message are required",
-          });
+        let condition = "WHERE mid = ?";
+        let params = [userId];
+        let gang = await sqlUtil.find("gang_members", condition, params);
+        if (gang.length === 0) {
+          console.error("No gang found for this GID.");
+          return callback({ status: false, message: "No gang found for this user." });
         }
-
-        const sender_id = socket.userId;
-
-        // ✅ Check if gang exists in MySQL
-        const [rows] = await sqlUtil.query(
-          "SELECT mid FROM gang_members WHERE gid = ?",
-          [gid]
-        );
-
-        if (rows.length === 0) {
-          return socket.emit("error", {
-            message: "Gang ID not found in the database.",
-          });
-        }
+        const { message } = data;
 
         // ✅ Insert gang message into MongoDB
-        const result = await mongoUtil.insertGangMessage(
-          gid,
-          sender_id,
-          message
-        );
-
-        console.log(
-          `✅ Gang message sent by ${sender_id} to GID ${gid}: ${message}`
+        const {insertedId} = await mongoUtil.insertGangMessage(
+          userId,
+          userName,
+          message,
+          gang[0].gid,
         );
 
         io.emit("newGangMessage", {
-          sender_id,
-          gid,
+          _id: insertedId,
+          senderId: userId,
+          senderName: userName,
           message,
-          created_at: new Date(),
+          gid: gang[0].gid,
+          timestamp: new Date(),
         });
       } catch (error) {
         console.error("❌ Detailed error during gangMegSend:", error);
@@ -375,37 +354,48 @@ function setupSocketServer(httpServer) {
       }
     });
 
-    socket.on("getGangMessages", async (data) => {
+    socket.on("getGangMessages", async (data, callback) => {
       try {
-        const { gid } = data;
+        let {userId} = socket;
 
-        let condition = "WHERE id = ?";
-        let params = [gid];
-        let gang = await sqlUtil.find("gangs", condition, params);
-
+        let condition = "WHERE mid = ?";
+        let params = [userId];
+        let gang = await sqlUtil.find("gang_members", condition, params);
         if (gang.length === 0) {
           console.error("No gang found for this GID.");
-          return socket.emit("error", {
-            message: "No gang found for this GID.",
-          });
+          return callback({ status: false, message: "No gang found for this user." });
         }
-        const messages = await mongoUtil.getMessagesForGang(gid);
-        if (messages.length === 0) {
-          console.error("No messages available for this gang.");
-          socket.emit("noMessages", {
-            message: "No messages available for this gang.",
-          });
-        }
-
+        const messages = await mongoUtil.getMessagesForGang(gang[0].gid);
         // If messages exist, emit them
-        socket.emit("gangMessages", {
-          gid,
-          messages,
-        });
-        console.log(messages);
+        callback({ status: true, messages});
       } catch (error) {
         console.error("❌ Error fetching gang messages:", error);
-        socket.emit("error", { message: "Failed to fetch gang messages." });
+        callback({ status: false, error});
+      }
+    });
+
+    //ChatList
+    socket.on("fetchChatList", async (data, callback) => {
+      try {
+        const {userId, userName} = socket;
+        const idList = await sqlUtil.fetchChatIdList(userId);
+        const chatList = await mongoUtil.getLastMessages(idList);
+        const merged = idList.map(user => {
+          const lastMsg = chatList.find(msg => msg.room_uuid === user.room_uuid);
+          return {
+            ...user,
+            objectId: lastMsg?._id || null,
+            message: lastMsg?.message || null,
+            timestamp: lastMsg?.timestamp || null,
+            receiver: lastMsg?.receiverId || null,
+            online: onlineUserIdsSet.has(user.id.toString()),
+          };
+        });
+        callback({ status: true, chatList: merged });
+        console.log("📜 Chat list fetched successfully:", merged);
+      } catch (error) {
+        console.error("❌ Error fetching chat list:", error);
+        callback({ status: false, error});
       }
     });
 
@@ -413,6 +403,7 @@ function setupSocketServer(httpServer) {
     socket.on("disconnect", () => {
       onlineUserIdsSet.delete(userIdStr);
       io.emit(`return_online_status_${userIdStr}`, { online_status: false });
+      io.emit('userStatusChange', {id: socket.userId, online: false});
       console.log(`❌ User ${userIdStr} disconnected.`);
     });
   });
