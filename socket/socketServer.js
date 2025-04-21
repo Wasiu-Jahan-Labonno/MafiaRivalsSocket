@@ -319,7 +319,7 @@ function setupSocketServer(httpServer) {
     });
     //////// gang
 
-    socket.on("gangMsgSend", async (data) => {
+    socket.on("gangMsgSend", async (data, callback) => {
       try {
         let {userId, userName} = socket;
 
@@ -330,23 +330,33 @@ function setupSocketServer(httpServer) {
           console.error("No gang found for this GID.");
           return callback({ status: false, message: "No gang found for this user." });
         }
-        const { message } = data;
+        const { message, uuid } = data;
 
         // ✅ Insert gang message into MongoDB
         const {insertedId} = await mongoUtil.insertGangMessage(
+          uuid,
           userId,
           userName,
           message,
-          gang[0].gid,
         );
 
-        io.emit("newGangMessage", {
+        io.to(uuid).emit("newGangMessage", {
           _id: insertedId,
+          roomId: uuid,
           senderId: userId,
           senderName: userName,
           message,
-          gid: gang[0].gid,
           timestamp: new Date(),
+        });
+
+        callback({ status: true, message: {
+            _id: insertedId,
+            roomId: uuid,
+            senderId: userId,
+            senderName: userName,
+            message,
+            timestamp: new Date(),
+          } 
         });
       } catch (error) {
         console.error("❌ Detailed error during gangMegSend:", error);
@@ -356,16 +366,8 @@ function setupSocketServer(httpServer) {
 
     socket.on("getGangMessages", async (data, callback) => {
       try {
-        let {userId} = socket;
-
-        let condition = "WHERE mid = ?";
-        let params = [userId];
-        let gang = await sqlUtil.find("gang_members", condition, params);
-        if (gang.length === 0) {
-          console.error("No gang found for this GID.");
-          return callback({ status: false, message: "No gang found for this user." });
-        }
-        const messages = await mongoUtil.getMessagesForGang(gang[0].gid);
+        socket.join(data.uuid);
+        const messages = await mongoUtil.getMessagesForGang(data.uuid);
         // If messages exist, emit them
         callback({ status: true, messages});
       } catch (error) {

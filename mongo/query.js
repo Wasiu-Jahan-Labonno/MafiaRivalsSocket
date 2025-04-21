@@ -198,26 +198,26 @@ class MongoUtil {
     }
   }
 
-  async insertGangMessage(userId, userName, message, gid) {
+  async insertGangMessage(roomId, userId, userName, message) {
     await this.connect();
     const collection = this.db.collection("gang_messages");
     return await collection.insertOne({
+      roomId,
       senderId: userId,
       senderName: userName,
       message,
-      gid,
       timestamp: new Date(),
     });
   }
 
-  async getMessagesForGang(gid) {
+  async getMessagesForGang(gUuid) {
     try {
       await this.connect(); // Ensure connected to MongoDB
       const collection = this.db.collection("gang_messages");
 
       // Fetch all messages for the given `gid`
       const messages = await collection
-        .find({ gid: gid }) // Filter messages by `gid`
+        .find({ roomId: gUuid }) // Filter messages by `gid`
         .sort({ timestamp: -1 }) // Sort by timestamp (Newest first)
         .toArray();
       // Return the fetched messages
