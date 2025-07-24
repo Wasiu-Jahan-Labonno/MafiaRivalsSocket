@@ -272,7 +272,7 @@ function setupSocketServer(httpServer) {
       try {
         const {insertedId} = await mongoUtil.insertGlobalMessage(senderId, senderName, type, message);
         io.emit("newGlobalMessage", {
-          _id: insertedId,
+          _id: insertedId, 
           senderId,
           senderName,
           message,
@@ -409,8 +409,6 @@ function setupSocketServer(httpServer) {
       console.log(`❌ User ${userIdStr} disconnected.`);
     });
   });
-
-  console.log("🚀 Socket.io Server running on port 3000");
 
   return io;
 }
