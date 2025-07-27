@@ -116,7 +116,7 @@ function setupSocketServer(httpServer) {
     socket.on("joinRoom", async ({friendId}, callback) => {
       if (!friendId) {
         console.error("❌ No data received.");
-        callback({ status: false, error });
+        callback({ status: false, error: "No friendId provided." });
         return;
       }
 
@@ -125,7 +125,7 @@ function setupSocketServer(httpServer) {
 
       if (!user1_id || !user2_id) {
         console.error("❌ Missing user1_id or user2_id", data);
-        callback({ status: false, error });
+        callback({ status: false, error: "User ID and recipient ID are required." });
         return;
       }
 
@@ -134,13 +134,13 @@ function setupSocketServer(httpServer) {
         !Number.isInteger(user2_id)
       ) {
         console.error("❌ User IDs must not be integers.");
-        callback({ status: false, error });
+        callback({ status: false, error: "User IDs must be valid integers." });
         return;
       }
 
       try {
         if (!user1_id || !user2_id) {
-          callback({ status: false, error });
+          callback({ status: false, error: "User ID and recipient ID are required." });
           return;
         }
         
@@ -151,7 +151,7 @@ function setupSocketServer(httpServer) {
           ![room.user1_id, room.user2_id].includes(user1_id) &&
           ![room.user1_id, room.user2_id].includes(user2_id)
         ) {
-          callback({ status: false, error });
+          callback({ status: false, error: "Unauthorized user." });
           return;
         }
         // Join the room in Socket.io
@@ -161,8 +161,8 @@ function setupSocketServer(httpServer) {
           status: true, 
           room: {
             room_uuid: room.room_uuid,
-            self: room.user1_id,
-            other: room.user2_id,
+            self: user1_id,
+            other: user2_id,
             online: onlineUserIdsSet.has(user2_id.toString()),
           },
           messages 
@@ -171,7 +171,7 @@ function setupSocketServer(httpServer) {
         console.log(`✅ User ${user1_id} joined room: ${room.room_uuid}`);
       } catch (error) {
         console.error("❌ Error in joinRoom:", error);
-        callback({ status: false, error });
+        callback({ status: false, error: error });
       }
     });
 
