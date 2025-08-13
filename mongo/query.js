@@ -9,7 +9,7 @@ class MongoUtil {
     const host = process.env.MONGO_HOST;
     const port = process.env.MONGO_PORT;
     // Create MongoDB URL with Authentication if Credentials Exist
-    const url = "mongodb://localhost:27017/";
+    const url = process.env.MONGO_URI ?? "mongodb://localhost:27017/";
 
     this.dbName = dbName;
     this.client = new MongoClient(url);
